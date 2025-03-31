@@ -166,6 +166,39 @@ LeftGroupBox:AddToggle('NoClipToggle', {
 -- Create a groupbox for Visual features
 local VisualGroupBox = Tabs.Main:AddLeftGroupbox('Visual')
 
+-- Function to create a health bar
+local function createHealthBar(parent, humanoid)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "HealthBar"
+    billboard.Adornee = parent
+    billboard.Size = UDim2.new(4, 0, 0.5, 0)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+
+    local barBackground = Instance.new("Frame", billboard)
+    barBackground.Size = UDim2.new(1, 0, 1, 0)
+    barBackground.BackgroundColor3 = Color3.new(0, 0, 0)
+    barBackground.BorderSizePixel = 0
+
+    local healthBar = Instance.new("Frame", barBackground)
+    healthBar.Size = UDim2.new(1, 0, 1, 0)
+    healthBar.BackgroundColor3 = Color3.new(0, 1, 0)
+    healthBar.BorderSizePixel = 0
+
+    humanoid.HealthChanged:Connect(function()
+        healthBar.Size = UDim2.new(humanoid.Health / humanoid.MaxHealth, 0, 1, 0)
+        if humanoid.Health / humanoid.MaxHealth > 0.5 then
+            healthBar.BackgroundColor3 = Color3.new(0, 1, 0) -- Green
+        elseif humanoid.Health / humanoid.MaxHealth > 0.2 then
+            healthBar.BackgroundColor3 = Color3.new(1, 1, 0) -- Yellow
+        else
+            healthBar.BackgroundColor3 = Color3.new(1, 0, 0) -- Red
+        end
+    end)
+
+    billboard.Parent = parent
+end
+
 -- Variable for Player ESP
 local espEnabled = false
 local espConnections = {}
@@ -184,6 +217,11 @@ local function addESPToCharacter(character)
             box.Transparency = 0.5
             box.Parent = part
         end
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid and not character:FindFirstChild("HealthBar") then
+        createHealthBar(character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart, humanoid)
     end
 end
 
@@ -231,17 +269,30 @@ end
 local function disableESP()
     espEnabled = false
 
-    -- Remove all ESP boxes
+    -- Remove all ESP boxes and health bars from players
     for _, player in pairs(game.Players:GetPlayers()) do
         if player ~= game.Players.LocalPlayer then
             local character = player.Character
             if character then
                 for _, part in pairs(character:GetDescendants()) do
+                    -- Destroy ESP boxes
                     if part:IsA("BasePart") and part:FindFirstChild("ESPBox") then
                         part.ESPBox:Destroy()
                     end
                 end
+                -- Destroy health bars
+                local healthBar = character:FindFirstChild("HealthBar")
+                if healthBar then
+                    healthBar:Destroy()
+                end
             end
+        end
+    end
+
+    -- Explicitly remove any stray HealthBar objects in the workspace
+    for _, descendant in pairs(workspace:GetDescendants()) do
+        if descendant:IsA("BillboardGui") and descendant.Name == "HealthBar" then
+            descendant:Destroy()
         end
     end
 
@@ -284,6 +335,11 @@ local function addESPToMob(mob)
             box.Parent = part
         end
     end
+
+    local humanoid = mob:FindFirstChildOfClass("Humanoid")
+    if humanoid and not mob:FindFirstChild("HealthBar") then
+        createHealthBar(mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart, humanoid)
+    end
 end
 
 -- Function to enable Mob ESP
@@ -310,14 +366,27 @@ end
 local function disableMobESP()
     mobESPEnabled = false
 
-    -- Remove all ESP boxes from mobs
+    -- Remove all ESP boxes and health bars from mobs
     for _, mob in pairs(workspace:GetDescendants()) do
         if mob:IsA("Model") and mob:FindFirstChild("Humanoid") then
             for _, part in pairs(mob:GetDescendants()) do
+                -- Destroy ESP boxes
                 if part:IsA("BasePart") and part:FindFirstChild("ESPBox") then
                     part.ESPBox:Destroy()
                 end
             end
+            -- Destroy health bars
+            local healthBar = mob:FindFirstChild("HealthBar")
+            if healthBar then
+                healthBar:Destroy()
+            end
+        end
+    end
+
+    -- Explicitly remove any stray HealthBar objects in the workspace
+    for _, descendant in pairs(workspace:GetDescendants()) do
+        if descendant:IsA("BillboardGui") and descendant.Name == "HealthBar" then
+            descendant:Destroy()
         end
     end
 
@@ -648,6 +717,78 @@ CombatGroupBox:AddToggle('InstaKillToggle', {
             enableInstaKill()
         else
             disableInstaKill()
+        end
+    end
+})
+-- Variable for Insta Kill with Creds
+local instaKillWithCredsEnabled = false
+local mobConnectionsWithCreds = {}
+
+-- Function to enable Insta Kill with Creds
+local function enableInstaKillWithCreds()
+    instaKillWithCredsEnabled = true
+
+    -- Listen for mobs being hit
+    for _, mob in pairs(workspace:GetDescendants()) do
+        if mob:IsA("Model") and mob:FindFirstChild("Humanoid") and mob ~= game.Players.LocalPlayer.Character then
+            local humanoid = mob:FindFirstChild("Humanoid")
+            if humanoid then
+                local connection = humanoid.HealthChanged:Connect(function()
+                    if instaKillWithCredsEnabled and humanoid.Health > 0 then
+                        local maxHealth = humanoid.MaxHealth
+                        local damageThreshold = maxHealth * 0.15 -- 15% of max health
+                        if humanoid.Health <= maxHealth - damageThreshold then
+                            humanoid.Health = 0 -- Set health to 0 to kill the mob
+                        end
+                    end
+                end)
+                table.insert(mobConnectionsWithCreds, connection)
+            end
+        end
+    end
+
+    -- Listen for new mobs being added to the workspace
+    local mobAddedConnection = workspace.DescendantAdded:Connect(function(descendant)
+        if instaKillWithCredsEnabled and descendant:IsA("Model") and descendant:FindFirstChild("Humanoid") and descendant ~= game.Players.LocalPlayer.Character then
+            local humanoid = descendant:FindFirstChild("Humanoid")
+            if humanoid then
+                local connection = humanoid.HealthChanged:Connect(function()
+                    if instaKillWithCredsEnabled and humanoid.Health > 0 then
+                        local maxHealth = humanoid.MaxHealth
+                        local damageThreshold = maxHealth * 0.15 -- 15% of max health
+                        if humanoid.Health <= maxHealth - damageThreshold then
+                            humanoid.Health = 0 -- Set health to 0 to kill the mob
+                        end
+                    end
+                end)
+                table.insert(mobConnectionsWithCreds, connection)
+            end
+        end
+    end)
+    table.insert(mobConnectionsWithCreds, mobAddedConnection)
+end
+
+-- Function to disable Insta Kill with Creds
+local function disableInstaKillWithCreds()
+    instaKillWithCredsEnabled = false
+
+    -- Disconnect all connections
+    for _, connection in pairs(mobConnectionsWithCreds) do
+        connection:Disconnect()
+    end
+    mobConnectionsWithCreds = {}
+end
+
+-- Add a toggle for Insta Kill with Creds
+CombatGroupBox:AddToggle('InstaKillWithCredsToggle', {
+    Text = 'Enable Insta Kill with Creds',
+    Default = false,
+    Tooltip = 'Toggle Insta Kill with Creds functionality on or off',
+    Callback = function(Value)
+        if Value then
+            enableInstaKillWithCreds()
+        else
+            disableInstaKillWithCreds()
         end
     end
 })
