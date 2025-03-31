@@ -1,0 +1,699 @@
+-- Load Linoria Library
+local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
+
+local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+
+-- Create the main window
+local Window = Library:CreateWindow({
+    Title = 'Float',
+    Center = true,
+    AutoShow = true,
+    TabPadding = 8,
+    MenuFadeTime = 0.2
+})
+
+-- Create tabs
+local Tabs = {
+    Main = Window:AddTab('Main'),
+    ['UI Settings'] = Window:AddTab('UI Settings'),
+}
+
+-- Create a groupbox for the fly script
+local LeftGroupBox = Tabs.Main:AddLeftGroupbox('Movement')
+
+-- Variables for flying
+local flying = false
+local speed = 10
+local keys = { a = false, d = false, w = false, s = false }
+local torso, Core
+
+-- Function to start flying
+local function startFly()
+    local plr = game.Players.LocalPlayer
+    local character = plr.Character or plr.CharacterAdded:Wait()
+
+    if workspace:FindFirstChild("Core") then
+        workspace.Core:Destroy()
+    end
+
+    Core = Instance.new("Part")
+    Core.Name = "Core"
+    Core.Size = Vector3.new(0.05, 0.05, 0.05)
+
+    Core.Parent = workspace
+    local Weld = Instance.new("Weld", Core)
+    Weld.Part0 = Core
+    Weld.Part1 = character.LowerTorso
+    Weld.C0 = CFrame.new(0, 0, 0)
+
+    torso = workspace.Core
+    flying = true
+
+    local pos = Instance.new("BodyPosition", torso)
+    local gyro = Instance.new("BodyGyro", torso)
+    pos.Name = "EPIXPOS"
+    pos.maxForce = Vector3.new(math.huge, math.huge, math.huge)
+    pos.position = torso.Position
+    gyro.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+    gyro.cframe = torso.CFrame
+
+    spawn(function()
+        repeat
+            wait()
+            local new = gyro.cframe - gyro.cframe.p + pos.position
+            if keys.w then
+                new = new + workspace.CurrentCamera.CFrame.LookVector * speed
+            end
+            if keys.s then
+                new = new - workspace.CurrentCamera.CFrame.LookVector * speed
+            end
+            if keys.d then
+                new = new * CFrame.new(speed, 0, 0)
+            end
+            if keys.a then
+                new = new * CFrame.new(-speed, 0, 0)
+            end
+            pos.position = new.p
+            gyro.cframe = workspace.CurrentCamera.CFrame
+        until not flying
+        pos:Destroy()
+        gyro:Destroy()
+    end)
+end
+
+-- Function to stop flying
+local function stopFly()
+    flying = false
+    if Core then
+        Core:Destroy()
+    end
+end
+
+-- Add a toggle to enable/disable flying
+LeftGroupBox:AddToggle('FlyToggle', {
+    Text = 'Enable Fly',
+    Default = false,
+    Tooltip = 'Toggle flying mode on or off',
+    Callback = function(Value)
+        if Value then
+            startFly()
+        else
+            stopFly()
+        end
+    end
+})
+
+-- Add a slider to adjust flying speed
+LeftGroupBox:AddSlider('FlySpeed', {
+    Text = 'Fly Speed',
+    Default = 10,
+    Min = 5,
+    Max = 50,
+    Rounding = 0,
+    Callback = function(Value)
+        speed = Value
+        print('Fly speed set to:', Value)
+    end
+})
+-- Variable for NoClip
+local noClip = false
+
+-- Function to enable NoClip
+local function startNoClip()
+    noClip = true
+    game:GetService("RunService").Stepped:Connect(function()
+        if noClip then
+            local character = game.Players.LocalPlayer.Character
+            if character then
+                for _, part in pairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Function to disable NoClip
+local function stopNoClip()
+    noClip = false
+    local character = game.Players.LocalPlayer.Character
+    if character then
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+end
+
+-- Add a toggle for NoClip
+LeftGroupBox:AddToggle('NoClipToggle', {
+    Text = 'Enable NoClip',
+    Default = false,
+    Tooltip = 'Toggle NoClip mode on or off',
+    Callback = function(Value)
+        if Value then
+            startNoClip()
+        else
+            stopNoClip()
+        end
+    end
+})
+-- Create a groupbox for Visual features
+local VisualGroupBox = Tabs.Main:AddLeftGroupbox('Visual')
+
+-- Variable for Player ESP
+local espEnabled = false
+local espConnections = {}
+
+-- Function to add ESP to a player's character
+local function addESPToCharacter(character)
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") and not part:FindFirstChild("ESPBox") then
+            local box = Instance.new("BoxHandleAdornment")
+            box.Name = "ESPBox"
+            box.Adornee = part
+            box.AlwaysOnTop = true
+            box.ZIndex = 5
+            box.Size = part.Size + Vector3.new(0.1, 0.1, 0.1)
+            box.Color3 = Color3.new(1, 1, 1) -- White color
+            box.Transparency = 0.5
+            box.Parent = part
+        end
+    end
+end
+
+-- Function to enable Player ESP
+local function enableESP()
+    espEnabled = true
+
+    -- Add ESP to all existing players
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player ~= game.Players.LocalPlayer then
+            local character = player.Character
+            if character then
+                addESPToCharacter(character)
+            end
+
+            -- Listen for character respawn
+            local respawnConnection = player.CharacterAdded:Connect(function(newCharacter)
+                if espEnabled then
+                    addESPToCharacter(newCharacter)
+                end
+            end)
+            table.insert(espConnections, respawnConnection)
+        end
+    end
+
+    -- Listen for new players joining
+    local playerAddedConnection = game.Players.PlayerAdded:Connect(function(player)
+        if player ~= game.Players.LocalPlayer then
+            local character = player.Character or player.CharacterAdded:Wait()
+            addESPToCharacter(character)
+
+            -- Listen for character respawn
+            local respawnConnection = player.CharacterAdded:Connect(function(newCharacter)
+                if espEnabled then
+                    addESPToCharacter(newCharacter)
+                end
+            end)
+            table.insert(espConnections, respawnConnection)
+        end
+    end)
+    table.insert(espConnections, playerAddedConnection)
+end
+
+-- Function to disable Player ESP
+local function disableESP()
+    espEnabled = false
+
+    -- Remove all ESP boxes
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player ~= game.Players.LocalPlayer then
+            local character = player.Character
+            if character then
+                for _, part in pairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") and part:FindFirstChild("ESPBox") then
+                        part.ESPBox:Destroy()
+                    end
+                end
+            end
+        end
+    end
+
+    -- Disconnect all connections
+    for _, connection in pairs(espConnections) do
+        connection:Disconnect()
+    end
+    espConnections = {}
+end
+
+-- Add a toggle for Player ESP
+VisualGroupBox:AddToggle('PlayerESPToggle', {
+    Text = 'Enable Player ESP',
+    Default = false,
+    Tooltip = 'Toggle Player ESP on or off',
+    Callback = function(Value)
+        if Value then
+            enableESP()
+        else
+            disableESP()
+        end
+    end
+})
+-- Variable for Mob ESP
+local mobESPEnabled = false
+local mobESPConnections = {}
+
+-- Function to add ESP to a mob
+local function addESPToMob(mob)
+    for _, part in pairs(mob:GetDescendants()) do
+        if part:IsA("BasePart") and not part:FindFirstChild("ESPBox") then
+            local box = Instance.new("BoxHandleAdornment")
+            box.Name = "ESPBox"
+            box.Adornee = part
+            box.AlwaysOnTop = true
+            box.ZIndex = 5
+            box.Size = part.Size + Vector3.new(0.1, 0.1, 0.1)
+            box.Color3 = Color3.new(0.270588, 0.258823, 1) -- Green color for mobs
+            box.Transparency = 0.5
+            box.Parent = part
+        end
+    end
+end
+
+-- Function to enable Mob ESP
+local function enableMobESP()
+    mobESPEnabled = true
+
+    -- Add ESP to all existing mobs
+    for _, mob in pairs(workspace:GetDescendants()) do
+        if mob:IsA("Model") and mob:FindFirstChild("Humanoid") and mob ~= game.Players.LocalPlayer.Character then
+            addESPToMob(mob)
+        end
+    end
+
+    -- Listen for new mobs being added to the workspace
+    local mobAddedConnection = workspace.DescendantAdded:Connect(function(descendant)
+        if mobESPEnabled and descendant:IsA("Model") and descendant:FindFirstChild("Humanoid") and descendant ~= game.Players.LocalPlayer.Character then
+            addESPToMob(descendant)
+        end
+    end)
+    table.insert(mobESPConnections, mobAddedConnection)
+end
+
+-- Function to disable Mob ESP
+local function disableMobESP()
+    mobESPEnabled = false
+
+    -- Remove all ESP boxes from mobs
+    for _, mob in pairs(workspace:GetDescendants()) do
+        if mob:IsA("Model") and mob:FindFirstChild("Humanoid") then
+            for _, part in pairs(mob:GetDescendants()) do
+                if part:IsA("BasePart") and part:FindFirstChild("ESPBox") then
+                    part.ESPBox:Destroy()
+                end
+            end
+        end
+    end
+
+    -- Disconnect all connections
+    for _, connection in pairs(mobESPConnections) do
+        connection:Disconnect()
+    end
+    mobESPConnections = {}
+end
+
+-- Add a toggle for Mob ESP
+VisualGroupBox:AddToggle('MobESPToggle', {
+    Text = 'Enable Mob ESP',
+    Default = false,
+    Tooltip = 'Toggle Mob ESP on or off',
+    Callback = function(Value)
+        if Value then
+            enableMobESP()
+        else
+            disableMobESP()
+        end
+    end
+})
+
+-- Variable for No Fall Damage
+local noFallDamage = false
+
+-- Function to enable No Fall Damage
+local function enableNoFallDamage()
+    noFallDamage = true
+    local humanoid = game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.StateChanged:Connect(function(_, newState)
+            if noFallDamage and newState == Enum.HumanoidStateType.Freefall then
+                humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+            end
+        end)
+    end
+end
+
+-- Function to disable No Fall Damage
+local function disableNoFallDamage()
+    noFallDamage = false
+end
+
+-- Add a toggle for No Fall Damage
+LeftGroupBox:AddToggle('NoFallDamageToggle', {
+    Text = 'Enable No Fall Damage',
+    Default = false,
+    Tooltip = 'Toggle No Fall Damage on or off',
+    Callback = function(Value)
+        if Value then
+            enableNoFallDamage()
+        else
+            disableNoFallDamage()
+        end
+    end
+})
+-- Variable for Infinite Jump
+local infiniteJumpEnabled = false
+
+-- Function to enable Infinite Jump
+local function enableInfiniteJump()
+    infiniteJumpEnabled = true
+    game:GetService("UserInputService").JumpRequest:Connect(function()
+        if infiniteJumpEnabled then
+            local character = game.Players.LocalPlayer.Character
+            if character and character:FindFirstChildOfClass("Humanoid") then
+                character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end)
+end
+
+-- Function to disable Infinite Jump
+local function disableInfiniteJump()
+    infiniteJumpEnabled = false
+end
+
+-- Add a toggle for Infinite Jump
+LeftGroupBox:AddToggle('InfiniteJumpToggle', {
+    Text = 'Enable Infinite Jump',
+    Default = false,
+    Tooltip = 'Toggle Infinite Jump on or off',
+    Callback = function(Value)
+        if Value then
+            enableInfiniteJump()
+        else
+            disableInfiniteJump()
+        end
+    end
+})
+-- Variable for Speed Walk
+local walkSpeed = 16 -- Default Roblox walk speed
+local speedWalkEnabled = false
+
+-- Function to enable Speed Walk
+local function enableSpeedWalk()
+    speedWalkEnabled = true
+    local character = game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if speedWalkEnabled then
+                humanoid.WalkSpeed = walkSpeed
+            end
+        end)
+        humanoid.WalkSpeed = walkSpeed
+    end
+end
+
+-- Function to disable Speed Walk
+local function disableSpeedWalk()
+    speedWalkEnabled = false
+    local character = game.Players.LocalPlayer.Character
+    if character and character:FindFirstChildOfClass("Humanoid") then
+        character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16 -- Reset to default speed
+    end
+end
+
+-- Add a toggle for Speed Walk
+LeftGroupBox:AddToggle('SpeedWalkToggle', {
+    Text = 'Enable Speed Walk',
+    Default = false,
+    Tooltip = 'Toggle Speed Walk on or off',
+    Callback = function(Value)
+        if Value then
+            enableSpeedWalk()
+        else
+            disableSpeedWalk()
+        end
+    end
+})
+
+-- Add a slider to adjust walking speed
+LeftGroupBox:AddSlider('WalkSpeedSlider', {
+    Text = 'Walk Speed',
+    Default = 16,
+    Min = 16,
+    Max = 500,
+    Rounding = 0,
+    Callback = function(Value)
+        walkSpeed = Value
+        if speedWalkEnabled then
+            local character = game.Players.LocalPlayer.Character
+            if character and character:FindFirstChildOfClass("Humanoid") then
+                character:FindFirstChildOfClass("Humanoid").WalkSpeed = walkSpeed
+            end
+        end
+        print('Walk speed set to:', Value)
+    end
+})
+-- Variable for Full Bright
+local fullBrightEnabled = false
+local brightnessLevel = 2 -- Default brightness level
+
+-- Function to enable Full Bright
+local function enableFullBright()
+    fullBrightEnabled = true
+    game:GetService("Lighting").Brightness = brightnessLevel
+    game:GetService("Lighting").Ambient = Color3.new(1, 1, 1) -- Set ambient light to full white
+    game:GetService("Lighting").OutdoorAmbient = Color3.new(1, 1, 1)
+end
+
+-- Function to disable Full Bright
+local function disableFullBright()
+    fullBrightEnabled = false
+    game:GetService("Lighting").Brightness = 1 -- Reset to default brightness
+    game:GetService("Lighting").Ambient = Color3.new(0, 0, 0) -- Reset ambient light
+    game:GetService("Lighting").OutdoorAmbient = Color3.new(0, 0, 0)
+end
+
+-- Add a toggle for Full Bright
+VisualGroupBox:AddToggle('FullBrightToggle', {
+    Text = 'Enable Full Bright',
+    Default = false,
+    Tooltip = 'Toggle Full Bright mode on or off',
+    Callback = function(Value)
+        if Value then
+            enableFullBright()
+        else
+            disableFullBright()
+        end
+    end
+})
+
+-- Add a slider for Brightness Level
+VisualGroupBox:AddSlider('BrightnessSlider', {
+    Text = 'Brightness Level',
+    Default = 2,
+    Min = 1,
+    Max = 10,
+    Rounding = 1,
+    Callback = function(Value)
+        brightnessLevel = Value
+        if fullBrightEnabled then
+            game:GetService("Lighting").Brightness = brightnessLevel
+        end
+        print('Brightness level set to:', Value)
+    end
+})
+---Qst, Ldr, Prtl
+local function addESPToMob(mob)
+    -- Ensure the mob is a model and not the player's character
+    if mob:IsA("Model") and mob ~= game.Players.LocalPlayer.Character then
+        -- Check if the mob has a PrimaryPart or at least one BasePart
+        local primaryPart = mob.PrimaryPart or mob:FindFirstChildWhichIsA("BasePart")
+        if primaryPart and not mob:FindFirstChild("Highlight") then
+            local highlight = Instance.new("Highlight")
+            highlight.Name = "Highlight"
+            highlight.Adornee = mob
+            highlight.FillTransparency = 1 -- Makes the inside transparent
+            highlight.OutlineTransparency = 0 -- Keeps the outline visible
+            highlight.OutlineColor = Color3.new(0, 1, 0) -- Green outline for mobs
+            highlight.Parent = mob
+        end
+    end
+end
+local function enableMobESP()
+    mobESPEnabled = true
+
+    -- Add ESP to all existing mobs
+    for _, mob in pairs(workspace:GetDescendants()) do
+        if mob:IsA("Model") and mob ~= game.Players.LocalPlayer.Character then
+            addESPToMob(mob)
+        end
+    end
+
+    -- Listen for new mobs being added to the workspace
+    local mobAddedConnection = workspace.DescendantAdded:Connect(function(descendant)
+        if mobESPEnabled and descendant:IsA("Model") and descendant ~= game.Players.LocalPlayer.Character then
+            addESPToMob(descendant)
+        end
+    end)
+    table.insert(mobESPConnections, mobAddedConnection)
+end
+local function disableMobESP()
+    mobESPEnabled = false
+
+    -- Remove all ESP boxes from mobs
+    for _, mob in pairs(workspace:GetDescendants()) do
+        if mob:IsA("Model") then
+            local highlight = mob:FindFirstChild("Highlight")
+            if highlight then
+                highlight:Destroy()
+            end
+        end
+    end
+
+    -- Disconnect all connections
+    for _, connection in pairs(mobESPConnections) do
+        connection:Disconnect()
+    end
+    mobESPConnections = {}
+end
+-- Add a toggle for Qst, Ldr, Prtl
+VisualGroupBox:AddToggle('QstLdrPrtlToggle', {
+    Text = 'Enable Qst, Ldr, Prtl',
+    Default = false,
+    Tooltip = 'Toggle Qst, Ldr, Prtl functionality on or off',
+    Callback = function(Value)
+        if Value then
+            enableMobESP()
+        else
+            disableMobESP()
+        end
+    end
+})
+-- Create a groupbox for Combat features
+local CombatGroupBox = Tabs.Main:AddRightGroupbox('Combat')
+
+-- Variable for Insta Kill
+local instaKillEnabled = false
+local mobConnections = {}
+-- Function to enable Insta Kill
+local function enableInstaKill()
+    instaKillEnabled = true
+
+    -- Listen for mobs being hit
+    for _, mob in pairs(workspace:GetDescendants()) do
+        if mob:IsA("Model") and mob:FindFirstChild("Humanoid") and mob ~= game.Players.LocalPlayer.Character then
+            local humanoid = mob:FindFirstChild("Humanoid")
+            if humanoid then
+                local connection = humanoid.HealthChanged:Connect(function()
+                    if instaKillEnabled and humanoid.Health > 0 then
+                        humanoid.Health = 0 -- Set health to 0 to kill the mob
+                    end
+                end)
+                table.insert(mobConnections, connection)
+            end
+        end
+    end
+
+    -- Listen for new mobs being added to the workspace
+    local mobAddedConnection = workspace.DescendantAdded:Connect(function(descendant)
+        if instaKillEnabled and descendant:IsA("Model") and descendant:FindFirstChild("Humanoid") and descendant ~= game.Players.LocalPlayer.Character then
+            local humanoid = descendant:FindFirstChild("Humanoid")
+            if humanoid then
+                local connection = humanoid.HealthChanged:Connect(function()
+                    if instaKillEnabled and humanoid.Health > 0 then
+                        humanoid.Health = 0 -- Set health to 0 to kill the mob
+                    end
+                end)
+                table.insert(mobConnections, connection)
+            end
+        end
+    end)
+    table.insert(mobConnections, mobAddedConnection)
+end
+
+-- Function to disable Insta Kill
+local function disableInstaKill()
+    instaKillEnabled = false
+
+    -- Disconnect all connections
+    for _, connection in pairs(mobConnections) do
+        connection:Disconnect()
+    end
+    mobConnections = {}
+end
+-- Add a toggle for Insta Kill
+CombatGroupBox:AddToggle('InstaKillToggle', {
+    Text = 'Enable Insta Kill',
+    Default = false,
+    Tooltip = 'Toggle Insta Kill functionality on or off',
+    Callback = function(Value)
+        if Value then
+            enableInstaKill()
+        else
+            disableInstaKill()
+        end
+    end
+})
+
+-- Handle key inputs for movement
+local plr = game.Players.LocalPlayer
+local mouse = plr:GetMouse()
+
+mouse.KeyDown:Connect(function(key)
+    if not torso or not torso.Parent then return end
+    if key == "w" then
+        keys.w = true
+    elseif key == "s" then
+        keys.s = true
+    elseif key == "a" then
+        keys.a = true
+    elseif key == "d" then
+        keys.d = true
+    end
+end)
+
+mouse.KeyUp:Connect(function(key)
+    if key == "w" then
+        keys.w = false
+    elseif key == "s" then
+        keys.s = false
+    elseif key == "a" then
+        keys.a = false
+    elseif key == "d" then
+        keys.d = false
+    end
+end)
+
+-- UI Settings
+local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
+
+MenuGroup:AddButton('Unload', function() Library:Unload() end)
+MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', { Default = 'End', NoUI = true, Text = 'Menu keybind' })
+
+Library.ToggleKeybind = Options.MenuKeybind
+
+-- Addons
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+ThemeManager:ApplyToTab(Tabs['UI Settings'])
+SaveManager:BuildConfigSection(Tabs['UI Settings'])
+
+SaveManager:LoadAutoloadConfig()
